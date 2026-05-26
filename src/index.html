@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>LLM Inference Performance Analyzer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f4;color:#1a1a18;font-size:14px}
+.app{display:flex;height:100vh;min-height:620px}
+.sidebar{width:340px;min-width:280px;background:#fff;border-right:1px solid #e5e3da;display:flex;flex-direction:column;overflow-y:auto}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e5e3da;padding:8px 14px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.tab{padding:5px 12px;border:1px solid #e5e3da;border-radius:8px;font-size:13px;cursor:pointer;background:transparent;color:#666}
+.tab:hover{background:#f5f5f4}.tab.active{background:#f0f0ee;color:#1a1a18;border-color:#c8c6be}
+.content{flex:1;overflow-y:auto;padding:16px}
+.mode-bar{display:flex;border:1px solid #e5e3da;border-radius:8px;overflow:hidden;width:100%}
+.mode-btn{flex:1;padding:7px 0;font-size:13px;cursor:pointer;background:transparent;border:none;color:#666}
+.mode-btn:hover{background:#f5f5f4}.mode-btn.active{background:#1a1a18;color:#fff}
+.panel{padding:11px 10px;border-bottom:1px solid #e5e3da}
+.phdr{font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:9px}
+.ig{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px}
+.ig3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.ifield{display:flex;flex-direction:column;gap:3px;min-width:0}
+.ifield label{font-size:11px;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ifield input,.ifield select{padding:6px 8px;border:1px solid #e5e3da;border-radius:7px;background:#f9f9f8;color:#1a1a18;font-size:12px;outline:none;width:100%;box-sizing:border-box}
+.ifield input:focus{border-color:#185FA5}
+.fld-row{display:flex;gap:8px;margin-bottom:4px;align-items:flex-start}
+.fld-row .ifield{flex:1 1 0}
+.fhint{font-size:10px;color:#aaa;margin-top:2px}
+.fhint.warn{color:#A06800}
+.info-strip{border-radius:7px;padding:7px 10px;font-size:11px;color:#555;line-height:1.7;margin-top:6px}
+.info-strip.ok{background:#E1F5EE;border:1px solid #9FE1CB}.info-strip.warn{background:#FEF3E2;border:1px solid #F0A32A}.info-strip.err{background:#FCEBEB;border:1px solid #F09595}
+.info-strip span{font-weight:600;color:#1a1a18}
+.info-strip .warn-line{color:#854F0B;font-weight:600}
+.info-strip .err-line{color:#A32D2D;font-weight:600}
+.tp-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.tp-label{font-size:11px;color:#888;min-width:90px}
+.tp-val{font-size:12px;font-weight:600;color:#1a1a18;min-width:28px;text-align:center}
+input[type=range]{flex:1;accent-color:#185FA5}
+.ltabs{display:flex;gap:4px;margin-bottom:8px}
+.ltb{flex:1;padding:5px 8px;border:1px solid #e5e3da;border-radius:7px;font-size:12px;cursor:pointer;background:transparent;color:#666;text-align:center}
+.ltb:hover{background:#f5f5f4}.ltb.active{background:#f0f0ee;color:#1a1a18;border-color:#c8c6be}
+.linp{display:flex;gap:6px}
+.linp input{flex:1;padding:6px 8px;border:1px solid #e5e3da;border-radius:7px;background:#f9f9f8;color:#1a1a18;font-size:12px;outline:none}
+.lbtn{padding:6px 10px;border:1px solid #e5e3da;border-radius:7px;font-size:12px;cursor:pointer;background:transparent}
+.lbtn.go{background:#185FA5;color:#fff;border-color:#185FA5}
+.lst{font-size:11px;margin-top:5px;min-height:14px;color:#888}
+.lst.ok{color:#0F6E56}.lst.err{color:#A32D2D}.lst.ld{color:#185FA5}
+.dz{border:1px dashed #c8c6be;border-radius:7px;padding:10px;text-align:center;font-size:12px;color:#888;cursor:pointer;background:#f9f9f8}
+.dz:hover,.dz.drag{border-color:#185FA5;background:#eef4fb}
+.sec-hdr{font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.06em;padding:8px 12px 3px;display:flex;align-items:center;justify-content:space-between}
+.chip-card{margin:4px 10px;padding:9px 12px;border:1px solid #e5e3da;border-radius:9px;background:#fff;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+.chip-card:hover{border-color:#c8c6be}.chip-card.active{border-color:#185FA5;background:#eef4fb}
+.layer-card{margin:3px 10px;padding:7px 10px;border:1px solid #e5e3da;border-radius:9px;background:#fff}
+.layer-card:hover{border-color:#c8c6be}
+.cn{font-size:12px;font-weight:600;color:#1a1a18}
+.cm{font-size:11px;color:#888;margin-top:1px}
+.add-btn{margin:4px 10px;padding:6px 12px;border:1px dashed #c8c6be;border-radius:9px;background:transparent;color:#888;font-size:12px;cursor:pointer;width:calc(100% - 20px);text-align:left}
+.add-btn:hover{background:#f5f5f4}
+.ibtn{background:transparent;border:none;cursor:pointer;padding:3px 5px;border-radius:4px;color:#888;font-size:12px}
+.ibtn:hover{background:#f0f0ee;color:#1a1a18}
+.ibtn.del:hover{color:#A32D2D;background:#fdf0f0}
+.fa2t{display:inline-flex;align-items:center;font-size:10px;cursor:pointer;padding:2px 6px;border-radius:99px;border:1px solid #e5e3da;color:#888;background:transparent}
+.fa2t.on{background:#FEF3E2;color:#854F0B;border-color:#F0A32A}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal{background:#fff;border-radius:12px;border:1px solid #e5e3da;padding:20px;width:400px;max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.12)}
+.modal.wide{width:540px}
+.modal h3{font-size:15px;font-weight:600;margin-bottom:14px}
+.f{margin-bottom:10px}
+.f label{font-size:12px;color:#666;display:block;margin-bottom:3px}
+.f input,.f select{width:100%;padding:7px 10px;border:1px solid #e5e3da;border-radius:8px;background:#f9f9f8;color:#1a1a18;font-size:13px;outline:none}
+.f input:focus,.f select:focus{border-color:#185FA5}
+.abox{background:#f9f9f8;border-radius:8px;padding:10px;margin-bottom:10px;border:1px solid #e5e3da}
+.abox-title{font-size:11px;font-weight:600;color:#888;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em}
+.mbtns{display:flex;gap:8px;margin-top:14px;justify-content:flex-end}
+.btn{padding:6px 14px;border:1px solid #e5e3da;border-radius:8px;font-size:13px;cursor:pointer;background:transparent;color:#1a1a18}
+.btn:hover{background:#f5f5f4}
+.btn.p{background:#185FA5;color:#fff;border-color:#185FA5}
+.btn.d{background:#A32D2D;color:#fff;border-color:#A32D2D}
+.btn.g{background:#0F6E56;color:#fff;border-color:#0F6E56}
+.mg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.mg5{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.mc{background:#f0f0ee;border-radius:8px;padding:10px 12px}
+.mc.hi{background:#eef4fb;border:1px solid #b5d4f4}
+.mc.wa{background:#FEF3E2;border:1px solid #F0A32A}
+.mc.ok{background:#E1F5EE;border:1px solid #5DCAA5}
+.ml{font-size:11px;color:#888;margin-bottom:3px}
+.mv{font-size:18px;font-weight:600;color:#1a1a18}
+.mu{font-size:11px;color:#888;font-weight:400}
+.cw{background:#fff;border:1px solid #e5e3da;border-radius:10px;padding:14px;margin-bottom:14px}
+.ct{font-size:13px;font-weight:600;color:#555;margin-bottom:10px}
+.lt{width:100%;border-collapse:collapse;font-size:12px}
+.lt th{text-align:left;padding:6px 10px;color:#888;font-weight:600;border-bottom:1px solid #e5e3da;background:#f9f9f8;white-space:nowrap}
+.lt td{padding:6px 10px;border-bottom:1px solid #f0f0ee;color:#1a1a18;vertical-align:middle}
+.lt tr:hover td{background:#f9f9f8}
+.bd{display:inline-block;font-size:10px;padding:2px 6px;border-radius:99px;font-weight:600}
+.bm{background:#E1F5EE;color:#0F6E56}.bc{background:#E6F1FB;color:#185FA5}
+.ba{background:#EEEDFE;color:#3C3489}.bf{background:#FEF3E2;color:#854F0B}
+.bla{background:#E1F5EE;color:#085041;border:1px solid #5DCAA5}
+.bmoe{background:#FAEEDA;color:#633806;border:1px solid #EF9F27}
+.bbar{height:7px;border-radius:4px;background:#f0f0ee;overflow:hidden;margin-top:3px}
+.bfill{height:100%;border-radius:4px}
+.tbar{height:12px;border-radius:4px;display:flex;overflow:hidden;gap:1px;width:100%;min-width:140px;background:#f0f0ee}
+.tbar-seg{height:100%;min-width:1px}
+.sr td{font-size:11px;color:#888;padding:4px 10px 4px 24px;background:#f9f9f8}
+.banner{border-radius:8px;padding:9px 12px;font-size:12px;margin-bottom:12px}
+.banner.fa2{background:#FEF3E2;border:1px solid #F0A32A;color:#633806}
+.banner.tp{background:#eef4fb;border:1px solid #b5d4f4;color:#0c447c;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px}
+.banner.dec{background:#E1F5EE;border:1px solid #5DCAA5;color:#085041}
+.banner.pre{background:#EEEDFE;border:1px solid #AFA9EC;color:#26215C}
+.dec-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.dec-card{background:#fff;border:1px solid #e5e3da;border-radius:10px;padding:14px;text-align:center}
+.dec-card.hl{border-color:#5DCAA5;background:#E1F5EE}
+.dec-card .big{font-size:28px;font-weight:700;color:#1a1a18;margin:4px 0}
+.dec-card .lbl{font-size:11px;color:#888}
+.dec-card .sub{font-size:12px;color:#555;margin-top:2px}
+.pt-wrap{overflow-y:auto;max-height:270px;border:1px solid #e5e3da;border-radius:8px}
+.pt{width:100%;border-collapse:collapse;font-size:12px}
+.pt th{text-align:left;padding:5px 10px;background:#f9f9f8;color:#888;font-weight:600;position:sticky;top:0;border-bottom:1px solid #e5e3da}
+.pt td{padding:5px 10px;border-bottom:1px solid #f0f0ee}
+.pt tr:hover td{background:#f9f9f8}
+.sum-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.sum-cell{background:#f9f9f8;border-radius:8px;padding:7px}
+.sum-label{font-size:10px;color:#888}
+.sum-val{font-size:13px;font-weight:600;color:#1a1a18;margin-top:1px}
+.es{text-align:center;padding:40px 20px;color:#888;font-size:13px}
+/* attribution */
+.attr{font-size:11px;color:#aaa;margin-left:auto;padding-left:12px;white-space:nowrap}
+.attr strong{color:#888}
+/* batch sweep */
+.sweep-ctrl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:10px 12px;background:#f9f9f8;border:1px solid #e5e3da;border-radius:9px}
+.sweep-ctrl label{font-size:12px;color:#666}
+.sweep-ctrl input{padding:5px 8px;border:1px solid #e5e3da;border-radius:6px;background:#fff;font-size:12px;width:72px}
+.sweep-ctrl select{padding:5px 8px;border:1px solid #e5e3da;border-radius:6px;background:#fff;font-size:12px}
+.sweep-btn{padding:5px 14px;background:#185FA5;color:#fff;border:none;border-radius:7px;font-size:12px;cursor:pointer}
+.sweep-btn:hover{background:#0f4880}
+/* comparison */
+.cmp-bar{display:flex;gap:8px;padding:10px 12px;background:#f9f9f8;border:1px solid #e5e3da;border-radius:9px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.cmp-col{flex:1;min-width:220px;display:flex;flex-direction:column;gap:5px}
+.cmp-col-hdr{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
+.cmp-col select,.cmp-col input{padding:5px 8px;border:1px solid #e5e3da;border-radius:6px;background:#fff;font-size:12px;width:100%}
+.cmp-vsep{display:flex;align-items:center;padding:0 4px;font-size:12px;color:#aaa;font-weight:600}
+.cmp-run{padding:6px 16px;background:#185FA5;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;align-self:flex-end}
+.cmp-run:hover{background:#0f4880}
+.cmp-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.cmp-card{background:#fff;border:1px solid #e5e3da;border-radius:10px;padding:12px}
+.cmp-card-hdr{font-size:12px;font-weight:700;color:#555;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.cmp-dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.cmp-stat{display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;border-bottom:1px solid #f0f0ee;font-size:12px}
+.cmp-stat:last-child{border-bottom:none}
+.cmp-stat .lbl{color:#888}
+.cmp-stat .val{font-weight:600;color:#1a1a18}
+.cmp-winner{color:#0F6E56;font-size:10px;margin-left:4px}
+.cmp-loser{color:#A32D2D;font-size:10px;margin-left:4px}
+</style>
+</head>
+<body>
+<div class="app">
+<div class="sidebar">
+  <div class="panel" style="padding:10px">
+    <div class="mode-bar">
+      <button class="mode-btn active" id="prefillBtn" onclick="setMode('prefill')">Prefill</button>
+      <button class="mode-btn" id="decodeBtn" onclick="setMode('decode')">Decode</button>
+    </div>
+  </div>
+
+  <!-- Inference config + TP -->
+  <div class="panel" id="configPanel">
+    <div class="phdr" id="configHdr">Prefill config</div>
+    <!-- Prefill: 2-col; Decode: 3-col (batch / seq / output) -->
+    <div id="prefillFields">
+      <div class="fld-row">
+        <div class="ifield">
+          <label id="cfgBatchLbl">Batch size</label>
+          <input type="number" id="cfgBatch" value="1" min="1" oninput="onPerRankBatchChange()" title="Batch size PER DP RANK. When DP>1, global batch = batch × DP."/>
+          <div class="fhint" id="cfgBatchHint" style="display:none">per DP rank · global = batch × DP</div>
+        </div>
+        <div class="ifield" id="cfgGlobalBatchField" style="display:none">
+          <label id="cfgGlobalBatchLbl">Global batch</label>
+          <input type="number" id="cfgGlobalBatch" value="1" min="1" oninput="onGlobalBatchChange()" title="Total batch across all DP replicas (= per-rank batch × DP). When DP=1 (pure TP), global batch equals per-rank batch. Throughput is always computed against global batch. Editing rounds per-rank UP when not divisible by DP (barrel effect — slowest rank dominates step time)."/>
+          <div class="fhint warn" id="cfgGlobalBatchNote"></div>
+        </div>
+        <div class="ifield">
+          <label id="seqLabel">Input length (tokens)</label>
+          <input type="number" id="cfgSeq" value="2048" min="1" oninput="onCfgChange()"/>
+        </div>
+      </div>
+    </div>
+    <div id="decodeFields" style="display:none">
+      <div class="fld-row">
+        <div class="ifield">
+          <label id="cfgBatchLblD">Batch size</label>
+          <input type="number" id="cfgBatchD" value="1" min="1" oninput="onPerRankBatchChange()" title="Batch size PER DP RANK. When DP>1, global batch = batch × DP."/>
+          <div class="fhint" id="cfgBatchHintD" style="display:none">per DP rank · global = batch × DP</div>
+        </div>
+        <div class="ifield" id="cfgGlobalBatchFieldD" style="display:none">
+          <label id="cfgGlobalBatchLblD">Global batch</label>
+          <input type="number" id="cfgGlobalBatchD" value="1" min="1" oninput="onGlobalBatchChange()" title="Total batch across all DP replicas (= per-rank batch × DP). When DP=1 (pure TP), global batch equals per-rank batch. Throughput is always computed against global batch. Editing rounds per-rank UP when not divisible by DP (barrel effect — slowest rank dominates step time)."/>
+          <div class="fhint warn" id="cfgGlobalBatchNoteD"></div>
+        </div>
+        <div class="ifield">
+          <label>Input length</label>
+          <input type="number" id="cfgSeqD" value="2048" min="1" oninput="onCfgChange()"/>
+        </div>
+        <div class="ifield">
+          <label>Output tokens</label>
+          <input type="number" id="cfgOut" value="256" min="1" oninput="onCfgChange()"/>
+        </div>
+      </div>
+    </div>
+    <!-- TP config -->
+    <div style="margin-top:8px;padding-top:8px;border-top:1px solid #f0f0ee">
+      <div class="tp-row" style="margin-bottom:5px">
+        <span class="tp-label">Total cards</span>
+        <input type="range" id="tpS" min="0" max="5" step="1" value="0" oninput="onTPChange()" title="Powers of 2: 1, 2, 4, 8, 16, 32"/>
+        <span class="tp-val" id="tpV">1</span>
+        <span style="font-size:11px;color:#888">cards (2ⁿ)</span>
+      </div>
+      <div class="ifield" id="dpField" style="margin-bottom:5px">
+        <div class="tp-row" style="margin-bottom:2px">
+          <span class="tp-label">DP degree</span>
+          <select id="dpSel" onchange="onTPChange()" style="padding:4px 6px;border:1px solid #e5e3da;border-radius:6px;background:#f9f9f8;font-size:11px;color:#1a1a18;outline:none;min-width:110px"></select>
+        </div>
+        <div id="dpHint" style="font-size:10px;color:#aaa;margin-top:1px"></div>
+      </div>
+      <div class="tp-row" style="margin-bottom:5px">
+        <span class="tp-label">Overlap factor</span>
+        <input type="range" id="ovS" min="0" max="1" step="0.05" value="0" oninput="onTPChange()"/>
+        <span class="tp-val" id="ovV">0.00</span>
+      </div>
+      <div class="ifield" style="margin-bottom:4px">
+        <label>Interconnect (from selected chip)</label>
+        <div id="ibwDisp" style="padding:6px 8px;border:1px solid #e5e3da;border-radius:7px;background:#f0f0ee;color:#1a1a18;font-size:12px;line-height:1.4">
+          <strong id="ibwChipLbl">BW1100</strong>: <strong id="ibwUniLbl">224</strong> GB/s unidirectional
+          <div style="font-size:10px;color:#888;margin-top:1px">spec <span id="ibwBiLbl">448</span> GB/s bidirectional</div>
+        </div>
+      </div>
+      <div class="ifield" id="moeParField" style="margin-top:4px">
+        <div class="tp-row" style="margin-bottom:2px">
+          <span class="tp-label" id="moeParLabel">MoE EP degree</span>
+          <select id="epDegSel" onchange="onTPChange()" style="padding:4px 6px;border:1px solid #e5e3da;border-radius:6px;background:#f9f9f8;font-size:11px;color:#1a1a18;outline:none;min-width:120px"></select>
+        </div>
+        <div id="moeParHint" style="font-size:10px;color:#aaa;margin-top:2px"></div>
+        <div id="moePeakRow" style="margin-top:4px;display:none;align-items:center;gap:6px">
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;color:#1a1a18">
+            <input type="checkbox" id="moePeakSel" onchange="onMoePeakChange()" style="margin:0;cursor:pointer"/>
+            <span>Peak / imbalance (worst card)</span>
+          </label>
+          <span id="moePeakHint" style="font-size:10px;color:#888"></span>
+        </div>
+      </div>
+      <div class="ifield" id="precisionField" style="margin-top:6px">
+        <label>Precision</label>
+        <select id="precisionSel" onchange="onPrecisionChange()" style="padding:4px 6px;border:1px solid #e5e3da;border-radius:6px;background:#f9f9f8;font-size:11px;color:#1a1a18;outline:none">
+          <option value="fp16">BF16 / FP16 (default)</option>
+          <option value="fp8w">W8A16 (FP8 weights, FP16 compute)</option>
+          <option value="fp8">W8A8 (FP8 weights + FP8 tensor core)</option>
+          <option value="fp8kv">W8A8 + FP8 KV cache</option>
+        </select>
+        <div style="font-size:10px;color:#aaa;margin-top:2px">W8A16: VRAM÷2, same TFLOPS · W8A8: VRAM÷2 + TFLOPS×2</div>
+      </div>
+    </div>
+    <div class="info-strip ok" id="cfgInfo" style="margin-top:6px"></div>
+  </div>
+
+  <!-- Loader -->
+  <div class="panel">
+    <div class="phdr">Load model</div>
+    <div class="ltabs">
+      <div class="ltb active" onclick="setLTab(this,'hf')">Hugging Face</div>
+      <div class="ltb" onclick="setLTab(this,'file')">Upload</div>
+    </div>
+    <div id="hfP">
+      <div class="linp">
+        <input id="hfI" list="hfIList" placeholder="e.g. meta-llama/Llama-3.1-8B-Instruct" onkeydown="if(event.key==='Enter')loadHF()"/>
+        <datalist id="hfIList">
+          <option value="MiniMaxAI/MiniMax-M2.5" label="MoE · 230B total / 10B active">
+          <option value="deepseek-ai/DeepSeek-V4-Pro" label="Hybrid HCA/CSA + MoE · 1.6T / 49B">
+          <option value="deepseek-ai/DeepSeek-V4-Flash" label="Hybrid HCA/CSA/SWA + MoE · 284B / 13B">
+          <option value="deepseek-ai/DeepSeek-V3.2-Exp" label="Sparse MLA (DSA) + MoE · 671B / 37B">
+          <option value="deepseek-ai/DeepSeek-R1" label="MLA + MoE · 671B / 37B reasoning">
+          <option value="moonshotai/Kimi-K2-Instruct" label="MLA + MoE · 1T / 32B (Kimi K2)">
+          <option value="moonshotai/Kimi-K2.5" label="MLA + MoE · 1T / 32B multimodal (K2.5)">
+          <option value="Qwen/Qwen3-235B-A22B" label="MoE · 235B / 22B">
+          <option value="Qwen/Qwen3-30B-A3B" label="MoE · 30B / 3B">
+          <option value="Qwen/Qwen3-32B" label="Dense · 32B">
+          <option value="Qwen/Qwen3.5-9B" label="Hybrid GDN+GA · 9B">
+          <option value="Qwen/Qwen3.5-397B-A17B" label="Hybrid DeltaNet + MoE · 397B / 17B">
+          <option value="XiaomiMiMo/MiMo-V2-Flash" label="Hybrid SWA/GA + MoE · 309B / 15B">
+          <option value="XiaomiMiMo/MiMo-7B-RL" label="Dense · 7B (MiMo-7B)">
+          <option value="stepfun-ai/Step-3.5-Flash" label="Hybrid SWA/GA + MoE · 196B / 11B">
+          <option value="zai-org/GLM-5.1" label="MoE (GLM-5 family)">
+          <option value="zai-org/GLM-4.5-Air" label="MoE · 106B / 12B">
+        </datalist>
+        <button class="lbtn go" onclick="loadHF()">Load</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:5px;align-items:center">
+        <label style="font-size:10px;color:#888">Endpoint</label>
+        <select id="hfEp" onchange="saveHfEp()" style="flex:1;padding:4px 6px;border:1px solid #e5e3da;border-radius:6px;background:#f9f9f8;font-size:11px;color:#1a1a18;outline:none">
+          <option value="https://huggingface.co">huggingface.co (global)</option>
+          <option value="https://hf-mirror.com">hf-mirror.com (CN mirror)</option>
+        </select>
+        <button class="lbtn" onclick="clearHfCache()" title="Clear cached HF configs" style="padding:4px 8px;font-size:10px">Clear cache</button>
+      </div>
+      <div class="lst" id="hfSt">Fetches config.json — cached locally</div>
+    </div>
+    <div id="fileP" style="display:none">
+      <div class="dz" id="dz" onclick="document.getElementById('fi').click()"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)">
+        Drop .safetensors or config.json
+      </div>
+      <input type="file" id="fi" style="display:none" accept=".safetensors,.json" onchange="handleFI(this)"/>
+      <div class="lst" id="fileSt"></div>
+    </div>
+  </div>
+
+  <!-- Model architecture -->
+  <div class="panel" id="configPanel2">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <span style="font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em">Model architecture</span>
+      <button class="ibtn" onclick="openArchEdit()" title="Edit model architecture">✎ edit</button>
+    </div>
+    <div class="info-strip" id="archInfo" style="background:#f9f9f8;border:1px solid #e5e3da;color:#666"></div>
+    <!-- v84: Sparse MLA (DSA) toggle — shown only when a DSA-capable model is loaded.
+         Moved here from the inference-config panel so it sits with model-intrinsic
+         knobs; refreshSparseMLAAvailability() toggles its visibility. -->
+    <div class="ifield" id="sparseMLAField" style="margin-top:8px;display:none">
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:12px">
+        <input type="checkbox" id="sparseMLAChk" checked onchange="onSparseMLAChange()" style="cursor:pointer"/>
+        Sparse MLA (DSA)
+      </label>
+      <div style="font-size:10px;color:#aaa;margin-top:2px">ON = lightning indexer + top-k core attention · OFF = dense-MLA compute upper bound (indexer dropped, core attends full sequence).</div>
+    </div>
+  </div>
+
+  <div class="sec-hdr">
+    <span>Layers</span>
+    <span id="lcount" style="font-weight:400;color:#aaa;font-size:11px"></span>
+  </div>
+  <div id="modelNameBar" style="margin:0 10px 4px;padding:4px 8px;border-radius:6px;background:#f0f0ee;border:1px solid #e5e3da;display:flex;align-items:center;gap:5px;font-size:11px;color:#555">
+    <span style="font-size:10px;color:#aaa">Model:</span>
+    <span id="modelNameLabel" style="font-weight:600;color:#1a1a18;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Qwen3-32B</span>
+  </div>
+  <div id="layerList"></div>
+  <button class="add-btn" onclick="openModal('layer')">+ add layer</button>
+
+  <div class="sec-hdr">Chips</div>
+  <div id="chipList"></div>
+  <button class="add-btn" onclick="openModal('chip')">+ add chip</button>
+</div>
+
+<div class="main">
+  <div class="topbar">
+    <span style="font-size:14px;font-weight:700;color:#1a1a18;margin-right:4px">LLM Perf</span>
+    <div id="modeTag" style="font-size:11px;padding:2px 8px;border-radius:99px;background:#EEEDFE;color:#3C3489;font-weight:600;margin-right:4px">PREFILL</div>
+    <div id="moePeakTag" style="font-size:11px;padding:2px 8px;border-radius:99px;background:#FEF3E2;color:#854F0B;font-weight:600;margin-right:4px;display:none" title="MoE routed weight/FLOPs/activations show the worst-card (busiest EP group) under load-balanced averaging. Toggle in sidebar.">PEAK · MoE imbalance</div>
+    <button class="tab active" onclick="setTab(this,'roofline')">Roofline</button>
+    <button class="tab" onclick="setTab(this,'bottleneck')">Bottleneck</button>
+    <button class="tab" onclick="setTab(this,'arithmetic')">Arithmetic</button>
+    <button class="tab" onclick="setTab(this,'throughput')">Throughput</button>
+    <button class="tab" onclick="setTab(this,'tp')">TP timeline</button>
+    <button class="tab" onclick="setTab(this,'decode')">Decode analysis</button>
+    <button class="tab" onclick="setTab(this,'sweep')">Batch sweep</button>
+    <button class="tab" onclick="setTab(this,'compare')">Compare</button>
+    <button class="tab" onclick="setTab(this,'structure')">Structure</button>
+    <span class="attr">powered by <strong>xzhou</strong></span>
+  </div>
+  <div class="content" id="mainContent"></div>
+</div>
+
+<div class="ov" id="ov" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="mb"></div>
+</div>
+</div>
+
+<script>
+<!-- BUILD: INJECT_JS -->
+</body>
+</html>
